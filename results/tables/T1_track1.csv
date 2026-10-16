@@ -1,0 +1,6 @@
+model,pinball_all,pinball_day,mae_median_day
+"Official benchmark (last year, same hour)",0.0375969,0.0721192,0.144238
+Persistence ensemble (last 30 days),0.0227657,0.0440659,0.126712
+Linear QR,0.0191309,0.0364869,0.103191
+LightGBM QR,0.0125406,0.0242729,0.0665324
+"GEFCom2014 winner (reported, approximate)",0.0121,,

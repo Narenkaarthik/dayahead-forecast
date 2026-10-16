@@ -1,0 +1,9 @@
+{
+  "minutes_by_step": {
+    "run_baselines.py": 0.1,
+    "tune_lightgbm.py": 1.1,
+    "run_track1.py": 36.1,
+    "run_track2.py": 0.5
+  },
+  "cpu_count": 16
+}

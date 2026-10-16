@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it as below. If you use the GEFCom2014
+  data, please also cite Hong et al. (2016), listed under references.
+type: software
+title: "Do Solar Forecast Intervals Keep Their Promise? Calibration of day-ahead probabilistic PV forecasts on GEFCom2014"
+authors:
+  - name: "Naren Kaarthik"
+repository-code: "https://github.com/Narenkaarthik/dayahead-forecast"
+license: MIT
+version: 1.0.0
+date-released: "2026-10-16"
+keywords:
+  - probabilistic forecasting
+  - solar power
+  - quantile regression
+  - conformal prediction
+  - GEFCom2014
+references:
+  - type: article
+    authors:
+      - family-names: Hong
+        given-names: Tao
+      - family-names: Pinson
+        given-names: Pierre
+      - family-names: Fan
+        given-names: Shu
+      - family-names: Zareipour
+        given-names: Hamidreza
+      - family-names: Troccoli
+        given-names: Alberto
+      - family-names: Hyndman
+        given-names: Rob J.
+    title: "Probabilistic energy forecasting: Global Energy Forecasting Competition 2014 and beyond"
+    journal: International Journal of Forecasting
+    volume: 32
+    issue: 3
+    start: 896
+    end: 913
+    year: 2016

@@ -1,0 +1,5 @@
+model,crossing_rows,capped_values,nonconverged_fits
+"Official benchmark (last year, same hour)",0,0,0
+Persistence ensemble (last 30 days),0,0,0
+Linear QR,8138,12240,0
+LightGBM QR,13770,0,0

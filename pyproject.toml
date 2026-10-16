@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pvcal"
+version = "0.1.0"
+description = "Calibration of day-ahead probabilistic PV forecasts under seasonal shift (GEFCom2014 solar track)"
+requires-python = ">=3.10"
+dependencies = ["numpy", "pandas>=2.0", "matplotlib"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+models = ["scikit-learn", "lightgbm", "statsmodels"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

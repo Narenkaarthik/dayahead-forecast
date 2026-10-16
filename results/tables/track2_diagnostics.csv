@@ -1,0 +1,3 @@
+level,gamma,alpha_nonpositive_days,rank_above_n_days,alpha_at_least_one_days,cqr_collapsed_rows
+0.8,0.005,0,0,0,0
+0.9,0.005,0,0,0,0

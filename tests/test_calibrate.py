@@ -9,7 +9,10 @@ from pvcal.calibrate import (
     conformity_scores,
     cqr_quantile,
     day_bootstrap,
+    mondrian_quantiles,
     percentile_ci,
+    recency_weights,
+    weighted_cqr_quantile,
 )
 
 
@@ -110,3 +113,37 @@ def test_day_bootstrap_is_reproducible_and_brackets_the_estimate():
     np.testing.assert_array_equal(reps, day_bootstrap(covered, hours, n_boot=500, seed=0))
     lo, hi = percentile_ci(reps)
     assert lo < covered.sum() / hours.sum() < hi
+
+
+@pytest.mark.parametrize("n", [1, 5, 19, 200])
+@pytest.mark.parametrize("alpha", [0.05, 0.1, 0.2, 0.5])
+def test_weighted_cqr_with_equal_weights_is_ordinary_cqr(n, alpha):
+    scores = np.random.default_rng(n).normal(size=n)
+    assert weighted_cqr_quantile(scores, np.ones(n), alpha) == cqr_quantile(scores, alpha)
+
+
+def test_weighted_cqr_hand_computed():
+    # Scores 1, 2, 3 with weights 1, 1, 0.25; the test point adds weight 1 at +infinity.
+    # Total 3.25; cumulative shares: 1 -> 1/3.25 = 0.308, 2 -> 2/3.25 = 0.615, 3 -> 2.25/3.25 = 0.692.
+    scores, weights = [1.0, 2.0, 3.0], [1.0, 1.0, 0.25]
+    assert weighted_cqr_quantile(scores, weights, alpha=0.5) == 2.0   # needs 0.5: reached at score 2
+    assert weighted_cqr_quantile(scores, weights, alpha=0.35) == 3.0  # needs 0.65: reached at score 3
+    assert weighted_cqr_quantile(scores, weights, alpha=0.2) == np.inf  # needs 0.8: only the test point's mass
+
+
+def test_recency_weights_halve_every_half_life():
+    np.testing.assert_allclose(recency_weights([0, 15, 30], half_life=15), [1.0, 0.5, 0.25])
+
+
+def test_mondrian_quantiles_are_cqr_within_each_group():
+    scores = np.array([1.0, 2.0, 3.0, 10.0, 20.0, 30.0])
+    groups = np.array(["clear"] * 3 + ["cloudy"] * 3)
+    Q = mondrian_quantiles(scores, groups, alpha=0.5)
+    assert Q == {"clear": cqr_quantile([1, 2, 3], 0.5), "cloudy": cqr_quantile([10, 20, 30], 0.5)}
+    assert Q["clear"] == 2.0 and Q["cloudy"] == 20.0
+
+
+def test_apply_adjustment_accepts_one_adjustment_per_row():
+    L, U = apply_adjustment([0.3, 0.3, 0.3], [0.5, 0.5, 0.5], np.array([0.1, -0.05, np.inf]))
+    np.testing.assert_allclose(L, [0.2, 0.35, 0.0])
+    np.testing.assert_allclose(U, [0.6, 0.45, 1.0])

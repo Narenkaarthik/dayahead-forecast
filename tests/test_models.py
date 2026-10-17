@@ -6,7 +6,8 @@ import pytest
 
 from pvcal.baselines import finalize
 from pvcal.features import is_daylight
-from pvcal.models import interpolate_quantiles, lightgbm_qr, linear_design, linear_qr
+from pvcal.models import (clear_sky_envelope, interpolate_quantiles, lightgbm_cs_qr, lightgbm_qr,
+                          linear_design, linear_qr)
 from pvcal.tasks import make_task, split
 
 FAST_TAUS = [0.1, 0.5, 0.9]
@@ -54,7 +55,8 @@ def test_an_unseen_test_hour_gets_all_zero_hour_columns(train_test):
 @pytest.mark.parametrize("model", [
     lambda tr, te: linear_qr(tr, te, taus=FAST_TAUS),
     lambda tr, te: lightgbm_qr(tr, te, taus=FAST_TAUS, params=FAST_LGBM),
-], ids=["linear_qr", "lightgbm_qr"])
+    lambda tr, te: lightgbm_cs_qr(tr, te, taus=FAST_TAUS, params=FAST_LGBM),
+], ids=["linear_qr", "lightgbm_qr", "lightgbm_cs_qr"])
 def test_quantile_models_return_valid_forecasts(train_test, model):
     train, test = train_test
     q = model(train, test)
@@ -70,7 +72,12 @@ def test_finalize_caps_sorts_zeroes_night_and_counts():
     log = {}
     out = finalize(q, daylight=[True, False], log=log)
     np.testing.assert_array_equal(out, [[0.1, 0.2, 1.0], [0.0, 0.0, 0.0]])
-    assert log == {"crossing_rows": 1, "capped_values": 1}  # counted on daylight rows only
+    # Counted on daylight rows only: one crossing row, whose largest drop is 0.2 - 0.1 = 0.1;
+    # sorting swaps 0.2 and 0.1, moving two values by 0.1 each; 1.3 is capped.
+    assert log["crossing_rows"] == 1 and log["capped_values"] == 1 and log["values"] == 3
+    assert log["crossing_size_sum"] == pytest.approx(0.1)
+    assert log["crossing_size_max"] == pytest.approx(0.1)
+    assert log["sort_shift_sum"] == pytest.approx(0.2)
 
 
 def test_interpolate_quantiles_reproduces_the_fitted_levels_exactly():
@@ -84,3 +91,18 @@ def test_interpolate_quantiles_reproduces_the_fitted_levels_exactly():
 def test_interpolate_quantiles_is_linear_between_levels_and_flat_outside():
     out = interpolate_quantiles([[0.2, 0.6]], [0.2, 0.6], taus=[0.1, 0.3, 0.4, 0.7])
     np.testing.assert_allclose(out, [[0.2, 0.3, 0.4, 0.6]])
+
+
+def test_clear_sky_envelope_is_a_high_quantile_within_the_day_of_year_window():
+    # One zone, one hour, one value per day of 2013: value = day of year / 365.
+    times = pd.date_range("2013-01-01 02:00", "2013-12-31 02:00", freq="D", tz="UTC")
+    df = pd.DataFrame({"zone": 1, "time": times, "ssrd": 500.0, "power": times.dayofyear / 365})
+    env = clear_sky_envelope(df, "power", level=1.0, half_window=10)
+    assert env[(1, 2, 100)] == pytest.approx(110 / 365)  # the largest value within days 90-110
+    assert env[(1, 2, 1)] == pytest.approx(365 / 365)  # the window wraps: 31 December is a neighbour
+
+
+def test_clear_sky_envelope_uses_daylight_training_rows_only(train_test):
+    train, test = train_test
+    env = clear_sky_envelope(train, "power")
+    assert set(env.index.get_level_values("hour")) == set(train.loc[is_daylight(train), "time"].dt.hour)

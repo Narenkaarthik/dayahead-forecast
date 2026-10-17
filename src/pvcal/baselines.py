@@ -47,16 +47,24 @@ def persistence_ensemble(
 def finalize(q, daylight=None, log: dict | None = None) -> np.ndarray:
     """Make quantile forecasts valid: sorted (no crossing), within [0, 1], and zero at forecast night.
 
-    If `log` is a dict, two counts are added to it (taken before the clean-up, on
+    If `log` is a dict, these totals are added to it (taken before the clean-up, on
     daylight rows when a daylight mask is given):
-      crossing_rows: rows where some quantile was below the one for a lower level;
-      capped_values: values above POWER_CAP (1.0) that were lowered to it.
+      crossing_rows:     rows where some quantile was below the one for a lower level;
+      crossing_size_sum: summed size of each crossing row's largest drop between neighbouring levels;
+      crossing_size_max: the largest such drop seen;
+      sort_shift_sum:    summed |sorted - unsorted| over all values (how far sorting moved them);
+      values:            number of values checked;
+      capped_values:     values above POWER_CAP (1.0) that were lowered to it.
     """
     q = np.asarray(q, dtype=float)
     if log is not None:
         rows = q if daylight is None else q[np.asarray(daylight, dtype=bool)]
-        crossed = (np.diff(rows, axis=1) < 0).any(axis=1)
-        log["crossing_rows"] = log.get("crossing_rows", 0) + int(crossed.sum())
+        drop = np.maximum(rows[:, :-1] - rows[:, 1:], 0.0).max(axis=1) if rows.size else np.zeros(0)
+        log["crossing_rows"] = log.get("crossing_rows", 0) + int((drop > 0).sum())
+        log["crossing_size_sum"] = log.get("crossing_size_sum", 0.0) + float(drop.sum())
+        log["crossing_size_max"] = max(log.get("crossing_size_max", 0.0), float(drop.max(initial=0.0)))
+        log["sort_shift_sum"] = log.get("sort_shift_sum", 0.0) + float(np.abs(np.sort(rows, axis=1) - rows).sum())
+        log["values"] = log.get("values", 0) + int(rows.size)
         log["capped_values"] = log.get("capped_values", 0) + int((rows > POWER_CAP).sum())
     q = np.sort(q, axis=1)  # sorting each row removes quantile crossing
     q = np.clip(q, 0.0, POWER_CAP)  # power is a fraction of capacity: between 0 and 1

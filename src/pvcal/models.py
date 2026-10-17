@@ -1,4 +1,5 @@
-"""Forecasters: linear quantile regression and LightGBM quantile regression.
+"""Forecasters: linear quantile regression, LightGBM quantile regression, and LightGBM on
+clear-sky-normalised power.
 
 Both follow the project's forecaster contract (see pvcal.baselines):
 
@@ -27,7 +28,8 @@ import numpy as np
 import pandas as pd
 
 from .baselines import finalize
-from .config import CAL_WINDOW_DAYS, LEARNING_RATE, QUANTREG_MAX_ITER, SEED, SPLIT_LEVELS
+from .config import (CAL_WINDOW_DAYS, CLEAR_SKY_FLOOR, CLEAR_SKY_HALF_WINDOW_DAYS, CLEAR_SKY_LEVEL,
+                     LEARNING_RATE, QUANTREG_MAX_ITER, SEED, SPLIT_LEVELS)
 from .data import NWP_VARS, ZONES
 from .features import calendar_features, is_daylight
 from .metrics import TAUS
@@ -162,6 +164,93 @@ def lightgbm_qr(train: pd.DataFrame, test: pd.DataFrame, taus=TAUS, params: dict
         )
         model.fit(X_train, y_train)
         q[test_day, j] = model.predict(X_test)
+    return finalize(q, test_day, log)
+
+
+# --- Clear-sky normalised LightGBM --------------------------------------------------------
+
+
+def clear_sky_envelope(train: pd.DataFrame, column: str = "power", level: float = CLEAR_SKY_LEVEL,
+                       half_window: int = CLEAR_SKY_HALF_WINDOW_DAYS) -> pd.Series:
+    """An empirical clear-sky profile, built from daylight training rows only.
+
+    For each zone, UTC hour and day of year (1-366), the `level` quantile of `column` over
+    training days within `half_window` days of that day of year, in any year (the window
+    wraps around New Year). With the farm locations unknown, this stands in for a physical
+    clear-sky model: it is roughly what the farm produces (or the forecast says) on a clear
+    day at that time. Returns a Series indexed by (zone, hour, doy); NaN where no training
+    hour falls in the window.
+    """
+    rows = train[is_daylight(train)]
+    zone, hour = rows["zone"].to_numpy(), rows["time"].dt.hour.to_numpy()
+    doy, value = rows["time"].dt.dayofyear.to_numpy(), rows[column].to_numpy(dtype=float)
+    targets = np.arange(1, 367)
+    pieces = []
+    for z, h in sorted(set(zip(zone, hour))):
+        mine = (zone == z) & (hour == h)
+        gap = np.abs(doy[mine][None, :] - targets[:, None])
+        gap = np.minimum(gap, 366 - gap)  # 31 December and 1 January are neighbours
+        window = np.where(gap <= half_window, value[mine][None, :], np.nan)
+        with warnings.catch_warnings():  # a day of year with no training hour gives NaN, quietly
+            warnings.simplefilter("ignore", RuntimeWarning)
+            envelope = np.nanquantile(window, level, axis=1)
+        pieces.append(pd.Series(envelope, index=pd.MultiIndex.from_product([[z], [h], targets])))
+    return pd.concat(pieces).rename_axis(["zone", "hour", "doy"])
+
+
+def _envelope_at(envelope: pd.Series, rows: pd.DataFrame) -> np.ndarray:
+    keys = pd.MultiIndex.from_arrays([rows["zone"], rows["time"].dt.hour, rows["time"].dt.dayofyear])
+    return envelope.reindex(keys).to_numpy(dtype=float)
+
+
+def clear_sky_features(rows: pd.DataFrame, power_env: pd.Series, ssrd_env: pd.Series):
+    """LightGBM inputs plus three clear-sky terms, and the power envelope used as the scale.
+
+      clear_sky_index  forecast SSRD / its clear-sky envelope: 1 = clear, near 0 = overcast
+      transmittance    forecast SSRD / forecast TSR: the share of the sunlight absorbed at the
+                       top of the atmosphere that reaches the ground (TSR is *net* top-of-
+                       atmosphere radiation, so clouds lower it too; it is not a clear-sky value)
+      power_envelope   the clear-sky power for that zone, hour and day of year
+    """
+    E = _envelope_at(power_env, rows)
+    E = np.where(np.isnan(E), CLEAR_SKY_FLOOR, np.maximum(E, CLEAR_SKY_FLOOR))
+    S = _envelope_at(ssrd_env, rows)
+    ssrd, tsr = rows["ssrd"].to_numpy(dtype=float), rows["tsr"].to_numpy(dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        csi = np.where(S > 1.0, ssrd / S, np.nan)  # NaN (unknown) is handled natively by LightGBM
+        transmittance = np.where(tsr > 1.0, ssrd / tsr, np.nan)
+    X = lgbm_features(rows).assign(clear_sky_index=csi, transmittance=transmittance, power_envelope=E)
+    return X, E
+
+
+def lightgbm_cs_qr(train: pd.DataFrame, test: pd.DataFrame, taus=TAUS, params: dict | None = None,
+                   log: dict | None = None) -> np.ndarray:
+    """LightGBM quantile regression on clear-sky-normalised power.
+
+    The target is power / clear-sky power (a "clear-sky index" of the output), so the model
+    learns how cloudy the hour will be rather than the daily and seasonal shape, which the
+    envelope already carries. Each training hour is weighted by its envelope E, so the
+    weighted pinball loss on the ratio equals the pinball loss on power (E x loss(r - q) =
+    loss(E r - E q)). Predicted ratio quantiles are multiplied back by E; because E > 0 is
+    known in advance, this turns them into quantiles of power. Same frozen settings as
+    lightgbm_qr; the envelopes come from training rows only.
+    """
+    from lightgbm import LGBMRegressor
+
+    power_env = clear_sky_envelope(train, "power")
+    ssrd_env = clear_sky_envelope(train, "ssrd")
+    train_day, test_day = is_daylight(train), is_daylight(test)
+    X_train, E_train = clear_sky_features(train[train_day], power_env, ssrd_env)
+    ratio = train.loc[train_day, "power"].to_numpy() / E_train
+    X_test, E_test = clear_sky_features(test[test_day], power_env, ssrd_env)
+
+    q = np.zeros((len(test), len(taus)))
+    for j, tau in enumerate(taus):
+        model = LGBMRegressor(objective="quantile", alpha=tau, learning_rate=LEARNING_RATE,
+                              deterministic=True, force_row_wise=True, random_state=SEED, verbose=-1,
+                              **(params or {}))
+        model.fit(X_train, ratio, sample_weight=E_train)
+        q[test_day, j] = E_test * model.predict(X_test)
     return finalize(q, test_day, log)
 
 

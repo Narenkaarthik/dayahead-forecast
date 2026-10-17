@@ -1,9 +1,10 @@
-"""Track 1: score four forecasters on the 12 scored months with the competition's metric.
+"""Track 1: score five forecasters on the 12 scored months with the competition's metric.
 
     python scripts/run_track1.py --data data/raw/Solar
 
-Models: the official benchmark (unmodified), the persistence ensemble, linear QR and
-LightGBM QR (settings frozen by scripts/tune_lightgbm.py). Tasks 4-15 (July 2013 - June 2014).
+Models: the official benchmark (unmodified), the persistence ensemble, linear QR, LightGBM QR
+(settings frozen by scripts/tune_lightgbm.py) and LightGBM QR on clear-sky-normalised power
+(same frozen settings). Tasks 4-15 (July 2013 - June 2014).
 
 Per task and model it computes
   pinball_all     mean pinball loss over the 99 levels, all hours, all 3 zones (the GEFCom2014 score)
@@ -13,7 +14,8 @@ Per task and model it computes
 Writes (results/...):
   tables/T1_track1.csv/.md        averages over tasks 4-15, plus the reported winner
   tables/T1_track1_by_task.csv    one row per model and task
-  tables/diagnostics_track1.csv   crossing rows, capped values, non-converged fits per model
+  tables/diagnostics_track1.csv   per model: how often and how much quantiles crossed before
+                                  sorting, capped values, non-converged linear fits
   figures/F3_reliability.png      observed share of y <= q_tau against tau
   figures/diagnostics/radiation_vs_power.png
   predictions/track1_lightgbm.csv LightGBM quantiles for Track 2 (variant V1; gitignored)
@@ -41,7 +43,7 @@ from pvcal.data import load_solar
 from pvcal.features import is_daylight
 from pvcal.leakage import assert_no_lookahead
 from pvcal.metrics import TAUS, pinball, reliability
-from pvcal.models import lightgbm_qr, linear_qr
+from pvcal.models import lightgbm_cs_qr, lightgbm_qr, linear_qr
 from pvcal.tables import save_table
 from pvcal.tasks import scored_tasks, split
 
@@ -49,7 +51,8 @@ BENCHMARK = "Official benchmark (last year, same hour)"
 PERSISTENCE = "Persistence ensemble (last 30 days)"
 LINEAR = "Linear QR"
 LGBM = "LightGBM QR"
-QR_MODELS = (LINEAR, LGBM)  # expensive: leakage-checked on LEAKAGE_CHECK_TASKS only
+LGBM_CS = "LightGBM QR, clear-sky normalised"
+QR_MODELS = (LINEAR, LGBM, LGBM_CS)  # expensive: leakage-checked on LEAKAGE_CHECK_TASKS only
 WINNER = "GEFCom2014 winner (reported, approximate)"
 SAVED_LEVELS = (0.05, 0.10, 0.50, 0.90, 0.95)  # the LightGBM quantiles Track 2 needs
 MEDIAN = int(np.flatnonzero(np.isclose(TAUS, 0.5))[0])  # column of the 0.50 quantile
@@ -121,6 +124,7 @@ def main() -> None:
         PERSISTENCE: persistence,
         LINEAR: linear_qr,
         LGBM: partial(lightgbm_qr, params=params),
+        LGBM_CS: partial(lightgbm_cs_qr, params=params),
     }
 
     df = load_solar(args.data)
@@ -146,9 +150,18 @@ def main() -> None:
                              .assign(task=task.task_id, daylight=day, **cols))
             print(f"{name}: task {task.task_id} ({task.label}) "
                   f"pinball {by_task[-1]['pinball_all']:.4f}  [{time.perf_counter() - start:.0f}s]", flush=True)
-        diagnostics.append({"model": name, "crossing_rows": log.get("crossing_rows", 0),
-                            "capped_values": log.get("capped_values", 0),
-                            "nonconverged_fits": log.get("nonconverged_fits", 0)})
+        crossed = log.get("crossing_rows", 0)
+        diagnostics.append({
+            "model": name,
+            "crossing_rows": crossed,
+            # How big the crossings were: the largest drop between neighbouring levels, averaged
+            # over the rows that crossed, and its maximum; and how far sorting moved values on average.
+            "mean_crossing_size": log.get("crossing_size_sum", 0.0) / crossed if crossed else 0.0,
+            "max_crossing_size": log.get("crossing_size_max", 0.0),
+            "mean_sort_shift": log.get("sort_shift_sum", 0.0) / log["values"] if log.get("values") else 0.0,
+            "capped_values": log.get("capped_values", 0),
+            "nonconverged_fits": log.get("nonconverged_fits", 0),
+        })
         if name != BENCHMARK:  # a point forecast has no meaningful reliability curve
             daytime[name] = (np.concatenate(ys), np.concatenate(qs))
 
@@ -167,7 +180,8 @@ def main() -> None:
     save_table(out / "tables" / "T1_track1", t1, display,
                note="Averages over the 12 scored tasks (July 2013 - June 2014), equal weight per task. "
                     "Pinball loss is averaged over the 99 quantile levels. Lower is better.")
-    pd.DataFrame(diagnostics).to_csv(out / "tables" / "diagnostics_track1.csv", index=False, encoding="utf-8")
+    pd.DataFrame(diagnostics).to_csv(out / "tables" / "diagnostics_track1.csv", index=False, float_format="%.6g",
+                                     encoding="utf-8")
     plot_reliability(daytime, out / "figures" / "F3_reliability.png")
     pd.concat(saved, ignore_index=True).to_csv(out / "predictions" / "track1_lightgbm.csv", index=False,
                                                float_format="%.6g", encoding="utf-8")

@@ -50,6 +50,15 @@ FALLBACK_LEVELS = (0.01, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0
                    0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 0.99)
 FALLBACK_IF_HOURS = 3.0
 
+# --- Clear-sky normalised LightGBM -----------------------------------------------------
+# The farm locations are unknown, so the sun's position (and a physical clear-sky model)
+# cannot be computed. Instead, an empirical "clear-sky envelope" is built from training
+# data: for each zone, UTC hour and day of year, a high quantile of past values within
+# +/- CLEAR_SKY_HALF_WINDOW_DAYS days of that day of year (in any training year).
+CLEAR_SKY_LEVEL = 0.95  # high, but not the maximum, so one odd hour cannot set the envelope
+CLEAR_SKY_HALF_WINDOW_DAYS = 15
+CLEAR_SKY_FLOOR = 0.01  # envelopes below 1% of capacity (dawn, dusk) are raised to this
+
 # --- Calibration study (Track 2) -------------------------------------------------------
 # Central prediction intervals: nominal coverage -> (lower level, upper level).
 INTERVALS = {0.8: (0.10, 0.90), 0.9: (0.05, 0.95)}
@@ -57,6 +66,9 @@ INTERVALS = {0.8: (0.10, 0.90), 0.9: (0.05, 0.95)}
 SPLIT_LEVELS = (0.05, 0.10, 0.90, 0.95)
 CAL_WINDOW_DAYS = 60  # calibration window: the 60 days just before each test month
 ACI_GAMMAS = (0.005, 0.01, 0.02, 0.05)  # candidate ACI step sizes, chosen on dev tasks
+# Recency-weighted CQR: a calibration day d days before the test month gets weight
+# 0.5 ** (d / half-life). Candidate half-lives (days), chosen on dev tasks like gamma.
+WEIGHTED_HALF_LIVES = (7, 15, 30)
 BOOTSTRAP_B = 1000  # bootstrap resamples of forecast days
 # Cloud-cover terciles are cut using daylight rows *before* the first scored month, so the
 # cut points never depend on test-period data.

@@ -106,3 +106,14 @@ def test_clear_sky_envelope_uses_daylight_training_rows_only(train_test):
     train, test = train_test
     env = clear_sky_envelope(train, "power")
     assert set(env.index.get_level_values("hour")) == set(train.loc[is_daylight(train), "time"].dt.hour)
+
+
+def test_forecast_month_returns_one_row_per_hour_and_one_column_per_level(synthetic_df):
+    from pvcal.forecast import forecast_month
+
+    out = forecast_month(synthetic_df, "2013-07", model="lightgbm", params=FAST_LGBM, taus=FAST_TAUS)
+    assert list(out.columns) == ["zone", "time", "q0.10", "q0.50", "q0.90"]
+    assert len(out) == 3 * 31 * 24  # three zones, every hour of July
+    assert out["time"].min() == pd.Timestamp("2013-07-01 01:00", tz="UTC")
+    with pytest.raises(ValueError):
+        forecast_month(synthetic_df, "2013-07", model="random-forest")

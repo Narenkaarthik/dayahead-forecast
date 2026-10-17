@@ -25,7 +25,8 @@ import pandas as pd
 
 from pvcal.config import WINNER_AVG_PINBALL
 
-LINEAR, LGBM = "Linear QR", "LightGBM QR"
+LINEAR, LGBM, LGBM_CS = "Linear QR", "LightGBM QR", "LightGBM QR, clear-sky normalised"
+QR_MODELS = (LINEAR, LGBM, LGBM_CS)
 BENCHMARK = "Official benchmark (last year, same hour)"
 PERSISTENCE = "Persistence ensemble (last 30 days)"
 
@@ -51,7 +52,9 @@ def numbers(out: Path) -> dict:
     diffs = pd.read_csv(tables / "T2_paired_differences.csv")
     t4 = pd.read_csv(tables / "T4_by_month.csv")
     t3 = pd.read_csv(tables / "T3_by_cloud.csv")
+    t5 = pd.read_csv(tables / "T5_conditional.csv").set_index(["variant", "level"])
     gamma = pd.read_csv(tables / "aci_gamma_selection.csv").query("chosen")["gamma"].iloc[0]
+    half_life = pd.read_csv(tables / "weighted_half_life_selection.csv").query("chosen")["half_life_days"].iloc[0]
 
     def cov(variant, level):
         return t2[(t2["variant"] == variant) & (t2["level"] == level)].iloc[0]
@@ -67,9 +70,10 @@ def numbers(out: Path) -> dict:
         return t3[(t3["variant"] == variant) & (t3["level"] == 0.9)].set_index("tercile")
 
     v1_month, v3_month = months("V1 raw-full"), months("V3 CQR")
-    best = t1.loc[[LINEAR, LGBM], "pinball_all"].idxmin()
+    best = t1.loc[list(QR_MODELS), "pinball_all"].idxmin()
     return {
-        "t1": t1, "best": best, "gamma": gamma,
+        "t1": t1, "best": best, "gamma": gamma, "half_life": int(half_life),
+        "t5": lambda variant, level=0.9: t5.loc[(variant, level)],
         "params": json.loads((out / "lightgbm_params.json").read_text(encoding="utf-8")),
         "cov": cov, "diff": diff,
         "v1_month_min": v1_month.loc[v1_month["picp"].idxmin()],
@@ -95,7 +99,7 @@ TARGET = {"below": "below target", "consistent with": "on target", "above": "abo
 
 
 def short_answer(n: dict) -> str:
-    """Three bullet points: accuracy, raw coverage, recalibration.
+    """Four bullet points: accuracy, raw coverage, recalibration, follow-up fixes.
 
     Every number and every verdict word is chosen by the results (a verdict comes from
     whether the 95% confidence interval contains the promised level), so the text cannot
@@ -108,12 +112,15 @@ def short_answer(n: dict) -> str:
     c1, c3 = n["v1_cloud"], n["v3_cloud"]
     d32 = n["diff"]("V3", 0.9)
 
-    rank = ("the more accurate of the two quantile models" if n["best"] == LGBM
-            else "less accurate here than linear QR")
-    accuracy = (f"**Accuracy.** LightGBM QR ({rank}) averages a pinball loss of {t1.loc[LGBM, 'pinball_all']:.4f} "
-                f"over the 12 test months, against {t1.loc[PERSISTENCE, 'pinball_all']:.4f} for the persistence "
-                f"ensemble and {t1.loc[BENCHMARK, 'pinball_all']:.4f} for the official benchmark. The competition "
-                f"winner's reported {WINNER_AVG_PINBALL:.4f} is not reproduced here, so that comparison is approximate.")
+    lgbm, cs = t1.loc[LGBM, "pinball_all"], t1.loc[LGBM_CS, "pinball_all"]
+    shown_cs, shown_lgbm = round(cs, 4), round(lgbm, 4)  # compare at the precision shown
+    change = ("improves it to" if shown_cs < shown_lgbm else "leaves it at" if shown_cs == shown_lgbm
+              else "worsens it to")
+    accuracy = (f"**Accuracy.** LightGBM QR averages a pinball loss of {lgbm:.4f} over the 12 test months, against "
+                f"{t1.loc[PERSISTENCE, 'pinball_all']:.4f} for the persistence ensemble and "
+                f"{t1.loc[BENCHMARK, 'pinball_all']:.4f} for the official benchmark; predicting power relative to an "
+                f"empirical clear-sky envelope {change} {cs:.4f}. The competition winner's reported "
+                f"{WINNER_AVG_PINBALL:.4f} is not reproduced here, so that comparison is approximate.")
 
     raw = (f"**Raw coverage.** Over the year, the raw LightGBM 90% interval {VERDICT[side(v1_90, 0.9)]}: it covers "
            f"{v1_90['picp']:.1%} of daylight hours. The 80% interval {VERDICT[side(v1_80, 0.8)]}, at "
@@ -138,7 +145,21 @@ def short_answer(n: dict) -> str:
              + ("A recalibrated variant improves on" if beaten else "Neither method beats")
              + f" the raw full-data model's 90% Winkler score (lower is better): {w1} for the raw model, "
                f"against {calibrated_w}.")
-    return "\n".join(f"- {bullet}" for bullet in (accuracy, raw, recal))
+    v3, v5, v6 = n["t5"]("V3 CQR"), n["t5"]("V5 Mondrian CQR"), n["t5"]("V6 weighted CQR")
+    d53 = n["diff"]("V5", 0.9)
+    gap3, gap5 = 100 * v3["cloud_gap"], 100 * v5["cloud_gap"]
+    shrink = "shrinks" if abs(gap5) < abs(gap3) else "does not shrink"
+    zero = (", no longer distinguishable from zero" if v5["cloud_gap_lo"] <= 0 <= v5["cloud_gap_hi"] else "")
+    mad3, mad5, mad6 = (f"{100 * v['month_mad']:.1f}" for v in (v3, v5, v6))
+    weighted = ("reduces" if float(mad6) < float(mad3) else "does not reduce")
+    fixes = (f"**Follow-up fixes.** Calibrating each forecast-cloud tercile separately (Mondrian CQR) {shrink} the "
+             f"90% clear-minus-cloudy coverage gap from {gap3:.1f} to {gap5:.1f} points{zero}, for intervals "
+             f"{abs(d53['d_mpiw']):.3f} of capacity {'wider' if d53['d_mpiw'] > 0 else 'narrower'} than CQR's. "
+             f"Weighting recent calibration days more (half-life {n['half_life']} days, chosen on the development "
+             f"months) {weighted} the month-to-month misses: the mean monthly distance from 90% is {mad6} points, "
+             f"against {mad3} for CQR and {mad5} for Mondrian CQR. Both were added after the test results showed the "
+             f"problem; neither has a setting tuned on the test months.")
+    return "\n".join(f"- {bullet}" for bullet in (accuracy, raw, recal, fixes))
 
 
 def key_numbers(n: dict) -> str:
@@ -146,15 +167,18 @@ def key_numbers(n: dict) -> str:
     gain = 1 - t1.loc[best, "pinball_all"] / t1.loc[BENCHMARK, "pinball_all"]
     lines = [
         f"- Track 1, average pinball loss over tasks 4-15: linear QR {t1.loc[LINEAR, 'pinball_all']:.4f}, "
-        f"LightGBM QR {t1.loc[LGBM, 'pinball_all']:.4f}, persistence ensemble {t1.loc[PERSISTENCE, 'pinball_all']:.4f}, "
+        f"LightGBM QR {t1.loc[LGBM, 'pinball_all']:.4f}, clear-sky-normalised LightGBM QR "
+        f"{t1.loc[LGBM_CS, 'pinball_all']:.4f}, persistence ensemble {t1.loc[PERSISTENCE, 'pinball_all']:.4f}, "
         f"official benchmark {t1.loc[BENCHMARK, 'pinball_all']:.4f}. Reported winner: {WINNER_AVG_PINBALL:.4f} (approximate).",
         f"- {best} improves on the official benchmark by {gain:.1%}.",
         f"- LightGBM settings chosen on tasks 1-3: {', '.join(f'{k} = {v}' for k, v in n['params'].items())}. "
-        f"ACI step size chosen on tasks 1-3: gamma = {n['gamma']:g}.",
+        f"Chosen on tasks 1-3 as well: ACI step size gamma = {n['gamma']:g}, weighted-CQR half-life "
+        f"{n['half_life']} days.",
     ]
     for level in (0.9, 0.8):
         parts = ", ".join(f"{v.split()[0]} {cov(v, level)['picp']:.1%} (width {cov(v, level)['mpiw']:.3f})"
-                          for v in ("V1 raw-full", "V2 raw-split", "V3 CQR", "V4 ACI"))
+                          for v in ("V1 raw-full", "V2 raw-split", "V3 CQR", "V4 ACI", "V5 Mondrian CQR",
+                                    "V6 weighted CQR"))
         lines.append(f"- {level:.0%} intervals, coverage over tasks 4-15: {parts}.")
     for level in (0.9, 0.8):
         d32, d43 = diff("V3", level), diff("V4", level)
@@ -166,6 +190,11 @@ def key_numbers(n: dict) -> str:
     c = n["v1_cloud"]
     lines.append(f"- Raw 90% coverage (V1) by forecast cloud tercile: low {c.loc['low', 'picp']:.1%}, "
                  f"mid {c.loc['mid', 'picp']:.1%}, high {c.loc['high', 'picp']:.1%}.")
+    gaps = "; ".join(f"{v.split()[0]} {100 * n['t5'](v)['cloud_gap']:+.1f} points "
+                     f"[{100 * n['t5'](v)['cloud_gap_lo']:+.1f}, {100 * n['t5'](v)['cloud_gap_hi']:+.1f}], monthly "
+                     f"miss {100 * n['t5'](v)['month_mad']:.1f}"
+                     for v in ("V1 raw-full", "V3 CQR", "V5 Mondrian CQR", "V6 weighted CQR"))
+    lines.append(f"- 90% clear-minus-cloudy coverage gap and mean monthly distance from 90% (points): {gaps}.")
     return "\n".join(lines)
 
 
@@ -177,19 +206,22 @@ def track1_note(n: dict, out: Path) -> str:
     t3 = pd.read_csv(out / "tables" / "T3_by_cloud.csv")
     n_day = int(t3[(t3["variant"] == "V1 raw-full") & (t3["level"] == 0.9)]["n_rows"].sum())
     lines = []
-    for model in (LINEAR, LGBM):
+    for model in QR_MODELS:
         vs_bench = 1 - t1.loc[model, "pinball_all"] / t1.loc[BENCHMARK, "pinball_all"]
         vs_pers = 1 - t1.loc[model, "pinball_all"] / t1.loc[PERSISTENCE, "pinball_all"]
         failed = int(diag.loc[model, "nonconverged_fits"])
         # Only the linear model's solver can fail to converge; LightGBM always builds its fixed number of trees.
         converged = ("" if model != LINEAR else
                      " Every fit converged." if failed == 0 else f" {failed:,} fits did not converge.")
+        d = diag.loc[model]
         lines.append(f"{model} improves on the official benchmark by {vs_bench:.1%} and on the persistence "
                      f"ensemble by {vs_pers:.1%} (average pinball, all hours). Its separately fitted levels crossed "
-                     f"(a lower level's quantile above a higher one's) in {diag.loc[model, 'crossing_rows']:,} of "
-                     f"the {n_day:,} daylight hours, which sorting fixed, and {diag.loc[model, 'capped_values']:,} "
-                     f"values above 1 were capped.{converged}")
-    beaten = [m for m in (LINEAR, LGBM) if t1.loc[m, "pinball_all"] < WINNER_AVG_PINBALL]
+                     f"(a lower level's quantile above a higher one's) in {d['crossing_rows']:,} of the {n_day:,} "
+                     f"daylight hours, but the crossings were small: the largest drop between neighbouring levels "
+                     f"averaged {d['mean_crossing_size']:.4f} of capacity (at most {d['max_crossing_size']:.3f}), and "
+                     f"sorting moved quantile values by {d['mean_sort_shift']:.5f} of capacity on average. "
+                     f"{d['capped_values']:,} values above 1 were capped.{converged}")
+    beaten = [m for m in QR_MODELS if t1.loc[m, "pinball_all"] < WINNER_AVG_PINBALL]
     lines.append("No model beats the reported winner's average, so the leakage red flag (a score below "
                  f"{WINNER_AVG_PINBALL}) did not trigger." if not beaten else
                  f"RED FLAG: {', '.join(beaten)} beat the reported winner; treat as leakage until proven otherwise.")
@@ -222,7 +254,8 @@ def main() -> None:
     text = fill(text, "KEY", key_numbers(n))
     text = fill(text, "T1_NOTE", track1_note(n, out))
     text = fill(text, "RUNTIME", runtime_note(out))
-    for name in ("T1_track1", "tuning_lightgbm", "T2_track2", "T2_paired_differences", "T3_by_cloud", "T4_by_month"):
+    for name in ("T1_track1", "tuning_lightgbm", "T2_track2", "T2_paired_differences", "T3_by_cloud", "T4_by_month",
+                 "T5_conditional"):
         text = fill(text, name, table(tables, name))
     readme.write_text(text, encoding="utf-8")
     print(f"Filled {readme} from {tables}.")

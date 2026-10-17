@@ -1,0 +1,37 @@
+model,task,month,levels,passed
+Linear QR,4,2013-07,5,True
+Linear QR,5,2013-08,5,True
+Linear QR,6,2013-09,5,True
+Linear QR,7,2013-10,5,True
+Linear QR,8,2013-11,5,True
+Linear QR,9,2013-12,5,True
+Linear QR,10,2014-01,5,True
+Linear QR,11,2014-02,5,True
+Linear QR,12,2014-03,5,True
+Linear QR,13,2014-04,5,True
+Linear QR,14,2014-05,5,True
+Linear QR,15,2014-06,5,True
+LightGBM QR,4,2013-07,5,True
+LightGBM QR,5,2013-08,5,True
+LightGBM QR,6,2013-09,5,True
+LightGBM QR,7,2013-10,5,True
+LightGBM QR,8,2013-11,5,True
+LightGBM QR,9,2013-12,5,True
+LightGBM QR,10,2014-01,5,True
+LightGBM QR,11,2014-02,5,True
+LightGBM QR,12,2014-03,5,True
+LightGBM QR,13,2014-04,5,True
+LightGBM QR,14,2014-05,5,True
+LightGBM QR,15,2014-06,5,True
+"LightGBM QR, clear-sky normalised",4,2013-07,5,True
+"LightGBM QR, clear-sky normalised",5,2013-08,5,True
+"LightGBM QR, clear-sky normalised",6,2013-09,5,True
+"LightGBM QR, clear-sky normalised",7,2013-10,5,True
+"LightGBM QR, clear-sky normalised",8,2013-11,5,True
+"LightGBM QR, clear-sky normalised",9,2013-12,5,True
+"LightGBM QR, clear-sky normalised",10,2014-01,5,True
+"LightGBM QR, clear-sky normalised",11,2014-02,5,True
+"LightGBM QR, clear-sky normalised",12,2014-03,5,True
+"LightGBM QR, clear-sky normalised",13,2014-04,5,True
+"LightGBM QR, clear-sky normalised",14,2014-05,5,True
+"LightGBM QR, clear-sky normalised",15,2014-06,5,True

@@ -1,4 +1,4 @@
-Tasks 4-15 (July 2013 - June 2014), daylight hours, all zones pooled (13,770 hours, 365 forecast days). 95% CIs resample whole forecast days (B = 1000, seed 0). ACI step size gamma = 0.005, chosen on tasks 1-3. Terciles of hourly forecast total cloud cover (tcc), cut at 0.076 and 0.696: the 1/3 and 2/3 quantiles of daylight tcc before 2013-07-01.
+Tasks 4-15 (July 2013 - June 2014), daylight hours, all zones pooled (13,770 hours, 365 forecast days). 95% CIs resample whole forecast days (B = 1000, seed 0). ACI step size gamma = 0.005 and weighted-CQR half-life 7 days, both chosen on tasks 1-3. Terciles of hourly forecast total cloud cover (tcc), cut at 0.076 and 0.696: the 1/3 and 2/3 quantiles of daylight tcc before 2013-07-01.
 
 | Variant | Forecast cloud | Level | PICP [95% CI] | MPIW |
 |---|---|---:|---:|---:|
@@ -14,6 +14,12 @@ Tasks 4-15 (July 2013 - June 2014), daylight hours, all zones pooled (13,770 hou
 | V4 ACI | low | 80% | 82.1% [80.2%, 83.8%] | 0.157 |
 | V4 ACI | mid | 80% | 79.3% [77.7%, 80.9%] | 0.240 |
 | V4 ACI | high | 80% | 79.2% [77.3%, 81.2%] | 0.248 |
+| V5 Mondrian CQR | low | 80% | 81.0% [79.2%, 82.8%] | 0.155 |
+| V5 Mondrian CQR | mid | 80% | 79.7% [78.1%, 81.2%] | 0.240 |
+| V5 Mondrian CQR | high | 80% | 80.8% [78.9%, 82.7%] | 0.252 |
+| V6 weighted CQR | low | 80% | 82.1% [80.3%, 83.9%] | 0.157 |
+| V6 weighted CQR | mid | 80% | 79.5% [78.0%, 81.1%] | 0.240 |
+| V6 weighted CQR | high | 80% | 79.4% [77.4%, 81.3%] | 0.248 |
 | V1 raw-full | low | 90% | 91.4% [90.0%, 92.6%] | 0.213 |
 | V1 raw-full | mid | 90% | 87.1% [85.6%, 88.5%] | 0.298 |
 | V1 raw-full | high | 90% | 86.9% [85.3%, 88.5%] | 0.304 |
@@ -26,3 +32,9 @@ Tasks 4-15 (July 2013 - June 2014), daylight hours, all zones pooled (13,770 hou
 | V4 ACI | low | 90% | 93.1% [91.8%, 94.4%] | 0.227 |
 | V4 ACI | mid | 90% | 88.8% [87.5%, 90.0%] | 0.308 |
 | V4 ACI | high | 90% | 88.7% [87.2%, 90.2%] | 0.314 |
+| V5 Mondrian CQR | low | 90% | 91.4% [90.0%, 92.8%] | 0.223 |
+| V5 Mondrian CQR | mid | 90% | 89.6% [88.4%, 90.9%] | 0.312 |
+| V5 Mondrian CQR | high | 90% | 90.2% [88.7%, 91.5%] | 0.321 |
+| V6 weighted CQR | low | 90% | 92.3% [91.0%, 93.7%] | 0.226 |
+| V6 weighted CQR | mid | 90% | 89.0% [87.7%, 90.3%] | 0.309 |
+| V6 weighted CQR | high | 90% | 89.0% [87.5%, 90.5%] | 0.315 |

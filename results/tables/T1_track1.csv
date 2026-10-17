@@ -3,4 +3,5 @@ model,pinball_all,pinball_day,mae_median_day
 Persistence ensemble (last 30 days),0.0227657,0.0440659,0.126712
 Linear QR,0.0191309,0.0364869,0.103191
 LightGBM QR,0.0125406,0.0242729,0.0665324
+"LightGBM QR, clear-sky normalised",0.012107,0.0234804,0.0650009
 "GEFCom2014 winner (reported, approximate)",0.0121,,

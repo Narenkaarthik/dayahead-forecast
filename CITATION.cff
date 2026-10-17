@@ -6,10 +6,10 @@ type: software
 title: "Do Solar Forecast Intervals Keep Their Promise? Calibration of day-ahead probabilistic PV forecasts on GEFCom2014"
 authors:
   - name: "Naren Kaarthik"
-repository-code: "https://github.com/Narenkaarthik/dayahead-forecast"
+repository-code: "https://github.com/Narenkaarthik/pv-interval-calibration"
 license: MIT
-version: 1.0.0
-date-released: "2026-10-16"
+version: 1.1.0
+date-released: "2026-10-17"
 keywords:
   - probabilistic forecasting
   - solar power

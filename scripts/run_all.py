@@ -2,10 +2,11 @@
 
     python scripts/run_all.py --data data/raw/Solar
 
-Steps: baselines -> LightGBM tuning (dev tasks) -> Track 1 -> Track 2 -> README report.
+Steps: baselines -> LightGBM tuning (dev tasks) -> Track 1 -> leakage check on all test months
+-> Track 2 -> README report.
 Each step is a separate script, so any one of them can also be rerun on its own. The run
-stops at the first step that fails (for example, a leakage check). Expect roughly 50 minutes on
-a 16-core PC, most of it fitting 99 quantile levels for two models on 12 months in Track 1.
+stops at the first step that fails (for example, a leakage check). Expect roughly two hours on
+a 16-core PC, most of it fitting 99 quantile levels for three models on 12 months in Track 1.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ STEPS = [
     ("Baselines", "run_baselines.py", True),
     ("LightGBM tuning on dev tasks 1-3", "tune_lightgbm.py", True),
     ("Track 1: quantile models", "run_track1.py", True),
+    ("Leakage check of every quantile model on every test month", "check_leakage.py", True),
     ("Track 2: calibration study", "run_track2.py", True),
     ("README report", "report.py", False),  # reads results/, not the raw data
 ]

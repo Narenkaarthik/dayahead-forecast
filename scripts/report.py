@@ -216,15 +216,23 @@ def track1_note(n: dict, out: Path) -> str:
         d = diag.loc[model]
         lines.append(f"{model} improves on the official benchmark by {vs_bench:.1%} and on the persistence "
                      f"ensemble by {vs_pers:.1%} (average pinball, all hours). Its separately fitted levels crossed "
-                     f"(a lower level's quantile above a higher one's) in {d['crossing_rows']:,} of the {n_day:,} "
-                     f"daylight hours, but the crossings were small: the largest drop between neighbouring levels "
-                     f"averaged {d['mean_crossing_size']:.4f} of capacity (at most {d['max_crossing_size']:.3f}), and "
-                     f"sorting moved quantile values by {d['mean_sort_shift']:.5f} of capacity on average. "
-                     f"{d['capped_values']:,} values above 1 were capped.{converged}")
+                     f"(a lower level's quantile above a higher one's) in {int(d['crossing_rows']):,} of the {n_day:,} "
+                     f"daylight hours; the largest drop between neighbouring levels averaged "
+                     f"{d['mean_crossing_size']:.4f} of capacity (at most {d['max_crossing_size']:.3f}), and sorting "
+                     f"moved quantile values by {d['mean_sort_shift']:.4f} of capacity on average. "
+                     f"{int(d['capped_values']):,} values above 1 were capped.{converged}")
     beaten = [m for m in QR_MODELS if t1.loc[m, "pinball_all"] < WINNER_AVG_PINBALL]
     lines.append("No model beats the reported winner's average, so the leakage red flag (a score below "
                  f"{WINNER_AVG_PINBALL}) did not trigger." if not beaten else
                  f"RED FLAG: {', '.join(beaten)} beat the reported winner; treat as leakage until proven otherwise.")
+    checks_file = out / "tables" / "leakage_checks.csv"
+    if checks_file.exists():
+        checks = pd.read_csv(checks_file)
+        passed = checks.groupby("model")["passed"].agg(["all", "size"])
+        if passed["all"].all():
+            lines.append(f"Beyond the full-size checks in the run itself, every quantile model passed the leakage "
+                         f"check on all {int(passed['size'].min())} test months "
+                         f"(`results/tables/leakage_checks.csv`).")
     return "\n\n".join(lines)
 
 
